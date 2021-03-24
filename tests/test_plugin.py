@@ -1,10 +1,3 @@
-# THIS FILE IMPLEMENTS AN INTEGRATION TEST ASSUMING A LOCAL
-# POWERGATE NODE AVAILABLE IN localhost:5002
-import tempfile
-
-import pytest
-from metadata_driver_interface.exceptions import DriverError
-
 from metadata_driver_filecoin.data_plugin import Plugin
 
 plugin = Plugin()

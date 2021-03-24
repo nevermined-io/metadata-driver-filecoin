@@ -43,7 +43,6 @@ class Plugin(AbstractPlugin):
             staged_file = self._client.data.stage_file(local_file, self._token)
 
             # Apply the default storage config to the given file
-            print("Applying Filecoin storage config to CID...")
             job = self._client.config.apply(staged_file.cid, override=False, token=self._token)
             return staged_file.cid
         except DriverError as e:
@@ -53,6 +52,8 @@ class Plugin(AbstractPlugin):
         try:
             filecoin_url = self.parse_url(remote_file, is_secure)
             self.connect(filecoin_url.gateway_url(), is_secure)
+            if filecoin_url.deal_id is not None:
+                self._client.config.apply(filecoin_url.cid_hash, import_deal_ids=[filecoin_url.deal_id], token=self._token)
             file_bytes = self._client.data.get(filecoin_url.cid_hash, self._token)
             if local_file is not None:  # Write to a file on disk
                 with open(local_file, "wb") as f:
