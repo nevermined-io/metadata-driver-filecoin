@@ -84,6 +84,7 @@ class Plugin(AbstractPlugin):
             f'a str URL starting with "cid://"'
 
         filecoin_url = FilecoinUrl()
+        filecoin_url.set_url(url)
 
         url_no_protocol = url.replace(Plugin.PROTOCOL, '')
         at_elements = url_no_protocol.split('@')
@@ -110,7 +111,7 @@ class Plugin(AbstractPlugin):
         return filecoin_url
 
     def generate_url(self, remote_file):
-        return f'{self.parse_url(remote_file)}'
+        return f'{self.parse_url(remote_file).url}'
 
     def delete(self, remote_file):
         pass
@@ -132,6 +133,7 @@ class FilecoinUrl:
     powergate_host = 'localhost'
     powergate_port = '5002'
     is_secure = False
+    url = None
 
     def __init__(self, _cid_hash=None, _user_token=None, _deal_id=None, _host='localhost', _port='5002', _is_secure=False):
         self.cid_hash = _cid_hash
@@ -143,3 +145,6 @@ class FilecoinUrl:
 
     def gateway_url(self):
         return self.powergate_host + ':' + self.powergate_port
+
+    def set_url(self, _url):
+        self.url = _url
