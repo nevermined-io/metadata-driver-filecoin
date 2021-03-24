@@ -29,4 +29,4 @@ jobs:
         pip install -r requirements_dev.txt
     - name: Test with pytest
       run: |
-        pytest -v
+        pytest test/*.py
