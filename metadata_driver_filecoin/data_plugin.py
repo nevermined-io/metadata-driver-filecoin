@@ -1,78 +1,100 @@
+import json
 import os
+import tempfile
+import time
 
+import requests
 from metadata_driver_interface.data_plugin import AbstractPlugin
 from metadata_driver_interface.exceptions import DriverError
-from pygate_grpc.client import PowerGateClient
+from requests_toolbelt.multipart import encoder
 
 
 class Plugin(AbstractPlugin):
-    POWERGATE_GATEWAY_ENVVAR = 'POWERGATE_GATEWAY'
-    POWERGATE_IS_SECURE_ENVVAR = 'POWERGATE_IS_SECURE'
-    POWERGATE_TOKEN_ENVVAR = 'POWERGATE_TOKEN'
-    DEFAULT_POWERGATE_GATEWAY = 'localhost:5002'
-    DEFAULT_POWERGATE_IS_SECURE = 'False'
     PROTOCOL = 'cid://'
+
+    ESTUARY_GATEWAY_ENVVAR = 'ESTUARY_GATEWAY'
+    ESTUARY_TOKEN_ENVVAR = 'ESTUARY_TOKEN'
+    IPFS_GATEWAY_ENVVAR = 'IPFS_GATEWAY'
+    DEFAULT_ESTUARY_GATEWAY = 'https://shuttle-4.estuary.tech'
+    DEFAULT_IPFS_GATEWAY = 'https://dweb.link/ipfs/:cid'
+    URI_ADD_CONTENT = '/content/add'
+    URI_GET_BY_CID = '/content/by-cid/:cid'
 
     def __init__(self, config=None):
         self.config = config
-        self._powergate_gateway = os.getenv(Plugin.POWERGATE_GATEWAY_ENVVAR, Plugin.DEFAULT_POWERGATE_GATEWAY)
-        self._is_secure = os.getenv(Plugin.POWERGATE_IS_SECURE_ENVVAR, Plugin.DEFAULT_POWERGATE_IS_SECURE)
-        self._client = PowerGateClient(self._powergate_gateway, is_secure=(self._is_secure == 'True'))
-        self._token = os.getenv(Plugin.POWERGATE_TOKEN_ENVVAR, None)
+        self._gateway = os.getenv(Plugin.ESTUARY_GATEWAY_ENVVAR, Plugin.DEFAULT_ESTUARY_GATEWAY)
+        self._ipfs_gateway = os.getenv(Plugin.IPFS_GATEWAY_ENVVAR, Plugin.DEFAULT_IPFS_GATEWAY)
+        self._token = os.getenv(Plugin.ESTUARY_TOKEN_ENVVAR, '')
+        self._headers = {
+            'Authorization': 'Bearer ' + self._token,
+            'Accept': 'application/json',
+        }
 
     def type(self):
         """str: the type of this plugin (``'filecoin'``)"""
         return 'filecoin'
 
-    def connect(self, gateway_url=None, is_secure=False, token=None):
+    def upload(self, local_file, gateway_url=DEFAULT_ESTUARY_GATEWAY, token=None):
         try:
-            if gateway_url is not None:
-                self._powergate_gateway = gateway_url
-                self._client = PowerGateClient(self._powergate_gateway, is_secure=is_secure)
-                if token is not None:
-                    self._token = token
-            if self._token is None:
-                self._user = self._client.admin.users.create()
-                self._token = self._user.token
-        except DriverError as e:
-            raise
+            url = self._gateway + Plugin.URI_ADD_CONTENT
+            _file = {'data': (os.path.basename(local_file), open(local_file, 'rb'))}
+            e = encoder.MultipartEncoder(_file)
 
-    def upload(self, local_file, gateway_url=DEFAULT_POWERGATE_GATEWAY, is_secure=False, token=None):
+            headers = self._headers
+            headers['Content-Type'] = e.content_type
+
+            r = requests.post(
+                url,
+                data=e,
+                headers=headers
+            )
+            if r.status_code == 200 or r.status_code == 201:
+                return json.loads(r.text)['cid']
+            raise Exception('Unable to upload file: ' + r.status_code.__str__() + ' - ' + r.text)
+        except DriverError as e:
+            raise Exception('Unexpected error:' + repr(e))
+
+    def download(self, cid_url, local_file=None, attempts=3):
+        """
+        Downloads a Filecoin content into a file (with large file support by streaming)
+
+        :param cid_url: URL to download
+        :param local_file: Local file name to contain the data downloaded
+        :param attempts: Number of attempts
+        :return: Boolean if file was downloaded or not
+        """
         try:
-            self.connect(gateway_url, is_secure, token)
-            staged_file = self._client.data.stage_file(local_file, self._token)
+            filecoin_url = self.parse_url(cid_url)
 
-            # Apply the default storage config to the given file
-            job = self._client.config.apply(staged_file.cid, override=False, token=self._token)
-            return staged_file.cid
+            for attempt in range(1, attempts + 1):
+                if attempt > 1:
+                    time.sleep(3)  # 3 seconds wait time between downloads
+                with requests.get(
+                        self._ipfs_gateway.replace(':cid', filecoin_url.cid_hash),
+                        stream=True
+                ) as r:
+                    r.raise_for_status()
+                    if local_file is None:
+                        new_file, local_file = tempfile.mkstemp()
+                    with open(local_file, 'wb') as out_file:
+                        for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
+                            out_file.write(chunk)
+                        return True
         except DriverError as e:
-            raise
-
-    def download(self, remote_file, local_file='/tmp/filecoin-test.raw', is_secure=False):
-        try:
-            filecoin_url = self.parse_url(remote_file, is_secure)
-            self.connect(filecoin_url.gateway_url(), is_secure)
-            if filecoin_url.deal_id is not None:
-                self._client.config.apply(filecoin_url.cid_hash, import_deal_ids=[filecoin_url.deal_id], token=self._token)
-            file_bytes = self._client.data.get(filecoin_url.cid_hash, self._token)
-            if local_file is not None:  # Write to a file on disk
-                with open(local_file, "wb") as f:
-                    f.write(file_bytes)
-            return file_bytes
-        except DriverError as e:
-            raise
+            raise Exception('Unexpected error:' + repr(e))
+        return False
 
     def list(self, remote_folder):
         pass
 
     @staticmethod
-    def parse_url(url, is_secure=False):
+    def parse_url(url):
         """
         It parses a url with the following formats:
-        cid://POWERGATE_TOKEN:DEAL_ID@POWERGATE_HOST:POWERGATE_PORT/CID_HASH
-        cid://POWERGATE_HOST:POWERGATE_PORT/CID_HASH
-        cid://POWERGATE_TOKEN:DEAL_ID@CID_HASH
-        cid://POWERGATE_TOKEN:@CID_HASH
+        cid://USER_TOKEN:DEAL_ID@ESTUARY_TOKEN/CID_HASH
+        cid://ESTUARY_TOKEN/CID_HASH
+        cid://USER_TOKEN:DEAL_ID@CID_HASH
+        cid://USER_TOKEN:@CID_HASH
         cid://:DEAL_ID@CID_HASH
         cid://CID_HASH
         :param url: the cid url
@@ -84,7 +106,7 @@ class Plugin(AbstractPlugin):
             f'a str URL starting with "cid://"'
 
         filecoin_url = FilecoinUrl()
-        filecoin_url.set_url(url)
+        filecoin_url.url = url
 
         url_no_protocol = url.replace(Plugin.PROTOCOL, '')
         at_elements = url_no_protocol.split('@')
@@ -98,16 +120,13 @@ class Plugin(AbstractPlugin):
         else:
             url_info = at_elements[0].split('/')
 
-        if len(url_info) > 1:  # We have hostname information
-            host_info = url_info[0].split(':')
-            if len(host_info) > 1:  # We have a port
-                filecoin_url.powergate_port = host_info[1]
-            filecoin_url.powergate_host = host_info[0]
+        if len(url_info) > 1:  # We have gateway information
+            filecoin_url.gateway_url = url_info[0]
             filecoin_url.cid_hash = url_info[1]
         else:
+            filecoin_url.gateway_url = Plugin.DEFAULT_ESTUARY_GATEWAY
             filecoin_url.cid_hash = url_info[0]
 
-        filecoin_url.is_secure = is_secure
         return filecoin_url
 
     def generate_url(self, remote_file):
@@ -130,21 +149,12 @@ class FilecoinUrl:
     cid_hash = ''
     user_token = None
     deal_id = None
-    powergate_host = 'localhost'
-    powergate_port = '5002'
-    is_secure = False
+    gateway_url = 'https://shuttle-4.estuary.tech'
     url = None
 
-    def __init__(self, _cid_hash=None, _user_token=None, _deal_id=None, _host='localhost', _port='5002', _is_secure=False):
+    def __init__(self, _cid_hash=None, _user_token=None, _deal_id=None, _gateway='localhost'):
         self.cid_hash = _cid_hash
         self.user_token = _user_token
         self.deal_id = _deal_id
-        self.powergate_host = _host
-        self.powergate_port = _port
-        self.is_secure = _is_secure
+        self.gateway_url = _gateway
 
-    def gateway_url(self):
-        return self.powergate_host + ':' + self.powergate_port
-
-    def set_url(self, _url):
-        self.url = _url
