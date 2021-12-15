@@ -34,10 +34,27 @@ class Plugin(AbstractPlugin):
         """str: the type of this plugin (``'filecoin'``)"""
         return 'filecoin'
 
-    def upload(self, local_file, gateway_url=DEFAULT_ESTUARY_GATEWAY, token=None):
+    def upload(self, local_file):
+        """
+        Uploads a local file system content to Filecoin decentralize storage
+        :param local_file: full path to the file in the local file system
+        :return: the CID of the file uploaded if the process worked
+        """
+        return self.upload_bytes(
+            open(local_file, 'rb'),
+            file_name=os.path.basename(local_file)
+        )
+
+    def upload_bytes(self, file_content, file_name='file'):
+        """
+        Uploads a bunch of bytes to Filecoin decentralize storage
+        :param file_content: bytes to upload to Filecoin
+        :param file_name: name of the file representing the bytes uploaded
+        :return: the CID of the file uploaded if the process worked
+        """
         try:
             url = self._gateway + Plugin.URI_ADD_CONTENT
-            _file = {'data': (os.path.basename(local_file), open(local_file, 'rb'))}
+            _file = {'data': (os.path.basename(file_name), file_content)}
             e = encoder.MultipartEncoder(_file)
 
             headers = self._headers
@@ -157,4 +174,3 @@ class FilecoinUrl:
         self.user_token = _user_token
         self.deal_id = _deal_id
         self.gateway_url = _gateway
-
