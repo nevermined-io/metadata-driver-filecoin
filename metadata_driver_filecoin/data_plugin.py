@@ -6,7 +6,20 @@ import time
 import requests
 from metadata_driver_interface.data_plugin import AbstractPlugin
 from metadata_driver_interface.exceptions import DriverError
+from requests import HTTPError
 from requests_toolbelt.multipart import encoder
+
+
+def _process_download(response, local_file=None):
+    try:
+        if local_file is None:
+            new_file, local_file = tempfile.mkstemp()
+        with open(local_file, 'wb') as out_file:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
+                out_file.write(chunk)
+        return True
+    except Exception as e:
+        raise Exception('Unable to process download: ' + repr(e))
 
 
 class Plugin(AbstractPlugin):
@@ -71,13 +84,15 @@ class Plugin(AbstractPlugin):
         except DriverError as e:
             raise Exception('Unexpected error:' + repr(e))
 
-    def download(self, cid_url, local_file=None, attempts=3):
+    def download(self, cid_url, local_file=None, attempts=3, try_ipfs=True):
         """
         Downloads a Filecoin content into a file (with large file support by streaming)
 
         :param cid_url: URL to download
         :param local_file: Local file name to contain the data downloaded
         :param attempts: Number of attempts
+        :param try_ipfs: If the content can't be found in Filecoin (storage deals are not executed immediately), tries
+        to download from IPFS
         :return: Boolean if file was downloaded or not
         """
         try:
@@ -86,17 +101,24 @@ class Plugin(AbstractPlugin):
             for attempt in range(1, attempts + 1):
                 if attempt > 1:
                     time.sleep(3)  # 3 seconds wait time between downloads
+
+                _gateway_cid_url = self._gateway + self.URI_GET_BY_CID.replace(':cid', filecoin_url.cid_hash)
                 with requests.get(
-                        self._ipfs_gateway.replace(':cid', filecoin_url.cid_hash),
+                        _gateway_cid_url,
+                        headers=self._headers,
                         stream=True
                 ) as r:
-                    r.raise_for_status()
-                    if local_file is None:
-                        new_file, local_file = tempfile.mkstemp()
-                    with open(local_file, 'wb') as out_file:
-                        for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
-                            out_file.write(chunk)
-                        return True
+                    try:
+                        r.raise_for_status()
+                        return _process_download(r, local_file)
+                    except HTTPError:
+                        if try_ipfs:
+                            with requests.get(
+                                    self._ipfs_gateway.replace(':cid', filecoin_url.cid_hash),
+                                    stream=True
+                            ) as r:
+                                r.raise_for_status()
+                                return _process_download(r, local_file)
         except DriverError as e:
             raise Exception('Unexpected error:' + repr(e))
         return False
