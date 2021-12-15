@@ -4,46 +4,40 @@ plugin = Plugin()
 
 
 def test_url_parser():
-    filecoin_url = plugin.parse_url('cid://POWERGATE_TOKEN:DEAL_ID@POWERGATE_HOST:1111/CID_HASH')
-    assert filecoin_url.user_token == 'POWERGATE_TOKEN'
+    filecoin_url = plugin.parse_url('cid://USER_TOKEN:DEAL_ID@ESTUARY_GATEWAY/CID_HASH')
+    assert filecoin_url.user_token == 'USER_TOKEN'
     assert filecoin_url.deal_id == 'DEAL_ID'
-    assert filecoin_url.powergate_host == 'POWERGATE_HOST'
-    assert filecoin_url.powergate_port == '1111'
+    assert filecoin_url.gateway_url == 'ESTUARY_GATEWAY'
     assert filecoin_url.cid_hash == 'CID_HASH'
 
-    filecoin_url = plugin.parse_url('cid://POWERGATE_HOST:1111/CID_HASH')
+    filecoin_url = plugin.parse_url('cid://ESTUARY_GATEWAY/CID_HASH')
     assert filecoin_url.user_token is None
     assert filecoin_url.deal_id is None
-    assert filecoin_url.powergate_host == 'POWERGATE_HOST'
-    assert filecoin_url.powergate_port == '1111'
+    assert filecoin_url.gateway_url == 'ESTUARY_GATEWAY'
     assert filecoin_url.cid_hash == 'CID_HASH'
 
-    filecoin_url = plugin.parse_url('cid://POWERGATE_TOKEN:DEAL_ID@CID_HASH')
-    assert filecoin_url.user_token == 'POWERGATE_TOKEN'
+    filecoin_url = plugin.parse_url('cid://USER_TOKEN:DEAL_ID@CID_HASH')
+    assert filecoin_url.user_token == 'USER_TOKEN'
     assert filecoin_url.deal_id == 'DEAL_ID'
-    assert filecoin_url.powergate_host == 'localhost'
-    assert filecoin_url.powergate_port == '5002'
+    assert filecoin_url.gateway_url == 'https://shuttle-4.estuary.tech'
     assert filecoin_url.cid_hash == 'CID_HASH'
 
-    filecoin_url = plugin.parse_url('cid://POWERGATE_TOKEN:@CID_HASH')
-    assert filecoin_url.user_token == 'POWERGATE_TOKEN'
+    filecoin_url = plugin.parse_url('cid://USER_TOKEN:@CID_HASH')
+    assert filecoin_url.user_token == 'USER_TOKEN'
     assert filecoin_url.deal_id is None
-    assert filecoin_url.powergate_host == 'localhost'
-    assert filecoin_url.powergate_port == '5002'
+    assert filecoin_url.gateway_url == 'https://shuttle-4.estuary.tech'
     assert filecoin_url.cid_hash == 'CID_HASH'
 
     filecoin_url = plugin.parse_url('cid://:DEAL_ID@CID_HASH')
     assert filecoin_url.user_token is None
     assert filecoin_url.deal_id == 'DEAL_ID'
-    assert filecoin_url.powergate_host == 'localhost'
-    assert filecoin_url.powergate_port == '5002'
+    assert filecoin_url.gateway_url == 'https://shuttle-4.estuary.tech'
     assert filecoin_url.cid_hash == 'CID_HASH'
 
     filecoin_url = plugin.parse_url('cid://CID_HASH')
     assert filecoin_url.user_token is None
     assert filecoin_url.deal_id is None
-    assert filecoin_url.powergate_host == 'localhost'
-    assert filecoin_url.powergate_port == '5002'
+    assert filecoin_url.gateway_url == 'https://shuttle-4.estuary.tech'
     assert filecoin_url.cid_hash == 'CID_HASH'
 
 
