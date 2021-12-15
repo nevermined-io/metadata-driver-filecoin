@@ -12,7 +12,7 @@ plugin = Plugin()
 
 def test_upload_download():
     try:
-        test_file = 'README.md'
+        test_file = 'NOTICE'
         cid_hash = plugin.upload(test_file)
         print('CID: ' + cid_hash)
         cid_url = 'cid://' + cid_hash
