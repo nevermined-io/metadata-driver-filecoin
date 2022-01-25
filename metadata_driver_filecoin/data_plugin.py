@@ -133,6 +133,7 @@ class Plugin(AbstractPlugin):
         return False
 
     def _get_filecoin_request_response(self, url, cid_hash, try_ipfs=True):
+        print(['make request', url])
         with requests.get(
                 url,
                 headers=self._headers,
@@ -144,6 +145,7 @@ class Plugin(AbstractPlugin):
                     return fc_req
             except HTTPError:
                 if try_ipfs:
+                    print(['make ipfs request', self._ipfs_gateway.replace(':cid', cid_hash)])
                     with requests.get(
                             self._ipfs_gateway.replace(':cid', cid_hash),
                             stream=True
